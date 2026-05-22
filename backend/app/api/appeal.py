@@ -1,5 +1,4 @@
 from fastapi import APIRouter
-import numpy as np
 import pandas as pd
 from app.models.schemas import AppealRequest, AppealResult, LoanApplication
 from app.core.model_loader import get_model, get_scaler, FEATURE_COLS
@@ -8,123 +7,126 @@ from app.services.groq_service import generate_appeal_response
 router = APIRouter()
 
 
-def get_prediction(application: LoanApplication, model, scaler) -> tuple:
-    data = {col: getattr(application, col) for col in FEATURE_COLS}
-    X = pd.DataFrame([data])
-    X_sc = scaler.transform(X)
-    prob = model.predict_proba(X_sc)[0][1]
-    decision = "Rejected" if prob >= 0.5 else "Approved"
-    return decision, prob
+def _prob(data: dict, model, scaler) -> float:
+    X = pd.DataFrame([{col: data[col] for col in FEATURE_COLS}])
+    return float(model.predict_proba(scaler.transform(X))[0][1])
 
 
-def find_counterfactuals(application: LoanApplication, model, scaler) -> list:
-    suggestions = []
-    base_data = {col: getattr(application, col) for col in FEATURE_COLS}
-    X_base = pd.DataFrame([base_data])
-    X_sc = scaler.transform(X_base)
-    base_prob = model.predict_proba(X_sc)[0][1]
+def _decision(prob: float) -> str:
+    return "Rejected" if prob >= 0.5 else "Approved"
+
+
+def find_counterfactuals(application: LoanApplication, model, scaler) -> list[dict]:
+    base = {col: getattr(application, col) for col in FEATURE_COLS}
+    base_prob = _prob(base, model, scaler)
 
     if base_prob < 0.5:
-        return []
+        return []   # Already approved
 
-    for delta in [20, 40, 60, 80]:
-        new_score = min(850, application.credit_score + delta)
-        test = {**base_data, "credit_score": new_score}
-        prob = model.predict_proba(scaler.transform(pd.DataFrame([test])))[0][1]
-        if prob < 0.5:
+    suggestions = []
+
+    # 1. Reduce revolving utilization
+    for target in [0.5, 0.3, 0.1]:
+        if target < application.revolving_utilization:
+            test = {**base, "revolving_utilization": target}
+            if _prob(test, model, scaler) < 0.5:
+                suggestions.append({
+                    "field":   "revolving_utilization",
+                    "current": application.revolving_utilization,
+                    "needed":  target,
+                    "change":  f"Reduce credit utilization from {application.revolving_utilization:.0%} to {target:.0%}",
+                    "impact":  "would flip to Approved",
+                })
+                break
+
+    # 2. Clear late payments (30–59 days)
+    if application.late_30_59_days > 0:
+        test = {**base, "late_30_59_days": 0, "late_60_89_days": 0, "late_90_days": 0}
+        if _prob(test, model, scaler) < 0.5:
             suggestions.append({
-                "field": "credit_score",
-                "current": application.credit_score,
-                "needed": new_score,
-                "change": f"Increase credit score by {delta} points (to {new_score})",
-                "impact": "would flip to Approved"
+                "field":   "late_30_59_days",
+                "current": application.late_30_59_days,
+                "needed":  0,
+                "change":  "Resolve all past-due accounts (30–90 day delinquencies cleared)",
+                "impact":  "would flip to Approved",
+            })
+
+    # 3. Increase monthly income
+    for mult in [1.2, 1.4, 1.6, 2.0]:
+        new_income = round(application.monthly_income * mult)
+        test = {**base, "monthly_income": new_income}
+        if _prob(test, model, scaler) < 0.5:
+            suggestions.append({
+                "field":   "monthly_income",
+                "current": application.monthly_income,
+                "needed":  new_income,
+                "change":  f"Increase monthly income to ${new_income:,.0f} ({int((mult-1)*100)}% increase)",
+                "impact":  "would flip to Approved",
             })
             break
 
-    for delta in [0.05, 0.10, 0.15]:
-        new_dti = max(0.01, application.debt_to_income_ratio - delta)
-        test = {**base_data, "debt_to_income_ratio": round(new_dti, 3)}
-        prob = model.predict_proba(scaler.transform(pd.DataFrame([test])))[0][1]
-        if prob < 0.5:
-            suggestions.append({
-                "field": "debt_to_income_ratio",
-                "current": application.debt_to_income_ratio,
-                "needed": round(new_dti, 3),
-                "change": f"Reduce debt-to-income ratio by {delta:.0%} (to {new_dti:.2f})",
-                "impact": "would flip to Approved"
-            })
-            break
-
-    for pct in [0.1, 0.2, 0.3]:
-        new_amount = application.loan_amount * (1 - pct)
-        test = {**base_data, "loan_amount": new_amount}
-        prob = model.predict_proba(scaler.transform(pd.DataFrame([test])))[0][1]
-        if prob < 0.5:
-            suggestions.append({
-                "field": "loan_amount",
-                "current": application.loan_amount,
-                "needed": round(new_amount),
-                "change": f"Reduce loan amount by {pct:.0%} (to ${new_amount:,.0f})",
-                "impact": "would flip to Approved"
-            })
-            break
-
-    if application.num_delinquencies > 0:
-        test = {**base_data, "num_delinquencies": 0}
-        prob = model.predict_proba(scaler.transform(pd.DataFrame([test])))[0][1]
-        if prob < 0.5:
-            suggestions.append({
-                "field": "num_delinquencies",
-                "current": application.num_delinquencies,
-                "needed": 0,
-                "change": "Clear all past delinquencies from credit record",
-                "impact": "would flip to Approved"
-            })
+    # 4. Reduce debt ratio
+    for target in [0.35, 0.25, 0.15]:
+        if target < application.debt_ratio:
+            test = {**base, "debt_ratio": target}
+            if _prob(test, model, scaler) < 0.5:
+                suggestions.append({
+                    "field":   "debt_ratio",
+                    "current": application.debt_ratio,
+                    "needed":  target,
+                    "change":  f"Reduce debt-to-income ratio from {application.debt_ratio:.2f} to {target:.2f}",
+                    "impact":  "would flip to Approved",
+                })
+                break
 
     return suggestions
 
 
 @router.post("/appeal", response_model=AppealResult)
 async def appeal_decision(request: AppealRequest):
-    model = get_model()
+    model  = get_model()
     scaler = get_scaler()
 
-    original_decision, original_prob = get_prediction(request.original_application, model, scaler)
+    orig_data = {col: getattr(request.original_application, col) for col in FEATURE_COLS}
+    orig_prob = _prob(orig_data, model, scaler)
+    orig_dec  = _decision(orig_prob)
 
-    updated_app = request.original_application.model_copy()
+    # Apply any updated fields from appellant
+    updated_data = {**orig_data}
     if request.updated_fields:
         for field, value in request.updated_fields.items():
-            if hasattr(updated_app, field):
-                setattr(updated_app, field, value)
+            if field in updated_data:
+                updated_data[field] = value
 
-    appeal_decision_str, appeal_prob = get_prediction(updated_app, model, scaler)
-    changed = original_decision != appeal_decision_str
+    appeal_prob = _prob(updated_data, model, scaler)
+    appeal_dec  = _decision(appeal_prob)
+    changed     = orig_dec != appeal_dec
 
     counterfactuals = find_counterfactuals(request.original_application, model, scaler)
     what_would_flip = [cf["change"] for cf in counterfactuals]
 
     improvement_suggestions = [
-        "Work on improving your credit score over 6–12 months by paying bills on time",
-        "Reduce existing debt balances to lower your debt-to-income ratio",
-        "Consider requesting a smaller loan amount",
-        "Build employment history if currently below 2 years",
-        "Dispute any errors on your credit report"
+        "Pay down revolving credit balances to reduce utilization below 30%",
+        "Bring all past-due accounts current and avoid new delinquencies",
+        "Reduce total monthly debt obligations before reapplying",
+        "Wait 6–12 months to establish a cleaner payment history",
+        "Dispute any errors on your credit report with the credit bureaus",
     ]
 
     ai_response = await generate_appeal_response(
         original_application=request.original_application,
         appeal_reason=request.appeal_reason,
-        original_decision=original_decision,
-        appeal_decision=appeal_decision_str,
+        original_decision=orig_dec,
+        appeal_decision=appeal_dec,
         changed=changed,
-        counterfactuals=counterfactuals
+        counterfactuals=counterfactuals,
     )
 
     return AppealResult(
-        original_decision=original_decision,
-        appeal_decision=appeal_decision_str,
+        original_decision=orig_dec,
+        appeal_decision=appeal_dec,
         changed=changed,
         improvement_suggestions=improvement_suggestions,
         what_would_flip_decision=what_would_flip,
-        ai_response=ai_response
+        ai_response=ai_response,
     )
