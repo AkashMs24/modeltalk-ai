@@ -1,3 +1,4 @@
+// v2
 import { useNavigate } from 'react-router-dom'
 import { Zap, Shield, FileText, MessageSquare, FlaskConical, ArrowRight, TrendingUp, Users, AlertTriangle } from 'lucide-react'
 
