@@ -17,11 +17,11 @@ import shap
 SEED = 42
 np.random.seed(SEED)
 
-RAW_DATA_PATH = "data/cs-training.csv"
-DATA_PATH     = "data/loan_data.csv"
-MODEL_PATH    = "data/loan_model.joblib"
-SCALER_PATH   = "data/scaler.joblib"
-EXPLAINER_PATH= "data/shap_explainer.joblib"
+RAW_DATA_PATH = "cs-training.csv"
+DATA_PATH     = "loan_data.csv"
+MODEL_PATH    = "loan_model.joblib"
+SCALER_PATH   = "scaler.joblib"
+EXPLAINER_PATH= "shap_explainer.joblib"
 
 os.makedirs("data", exist_ok=True)
 
