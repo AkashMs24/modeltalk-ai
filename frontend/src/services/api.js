@@ -7,17 +7,9 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 })
 
-export const predictLoan = (application) =>
-  api.post('/predict', application).then(r => r.data)
-
-export const explainDecision = (application) =>
-  api.post('/explain', application).then(r => r.data)
-
-export const getBiasReport = () =>
-  api.get('/bias-report').then(r => r.data)
-
-export const submitAppeal = (payload) =>
-  api.post('/appeal', payload).then(r => r.data)
-
-export const sendChatMessage = (payload) =>
-  api.post('/chat', payload).then(r => r.data)
+export const predictLoan      = (application) => api.post('/predict',     application).then(r => r.data)
+export const explainDecision  = (application) => api.post('/explain',     application).then(r => r.data)
+export const getBiasReport    = ()            => api.get('/bias-report')              .then(r => r.data)
+export const submitAppeal     = (payload)     => api.post('/appeal',      payload)    .then(r => r.data)
+export const sendChatMessage  = (payload)     => api.post('/chat',        payload)    .then(r => r.data)
+export const runWhatIf        = (payload)     => api.post('/whatif',      payload)    .then(r => r.data)
