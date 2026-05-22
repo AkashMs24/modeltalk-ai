@@ -1,6 +1,19 @@
 """
 Train the Loan Credit Risk Model using real Kaggle 'Give Me Some Credit' dataset.
 Dataset: cs-training.csv from https://www.kaggle.com/c/GiveMeSomeCredit
+
+Kaggle columns → app feature names:
+  RevolvingUtilizationOfUnsecuredLines → revolving_utilization
+  age                                  → age
+  NumberOfTime30-59DaysPastDueNotWorse → times_30_59_days_late
+  DebtRatio                            → debt_to_income_ratio
+  MonthlyIncome                        → monthly_income
+  NumberOfOpenCreditLinesAndLoans      → num_credit_lines
+  NumberOfTimes90DaysLate              → times_90_days_late
+  NumberRealEstateLoansOrLines         → num_real_estate_loans
+  NumberOfTime60-89DaysPastDueNotWorse → times_60_89_days_late
+  NumberOfDependents                   → num_dependents
+  SeriousDlqin2yrs                     → default (label)
 """
 
 import pandas as pd
@@ -18,76 +31,87 @@ SEED = 42
 np.random.seed(SEED)
 
 RAW_DATA_PATH = "cs-training.csv"
-DATA_PATH     = "loan_data.csv"
-MODEL_PATH    = "loan_model.joblib"
-SCALER_PATH   = "scaler.joblib"
-EXPLAINER_PATH= "shap_explainer.joblib"
+DATA_PATH     = "data/loan_data.csv"
+MODEL_PATH    = "data/loan_model.joblib"
+SCALER_PATH   = "data/scaler.joblib"
+EXPLAINER_PATH= "data/shap_explainer.joblib"
 
 os.makedirs("data", exist_ok=True)
 
 # Maps Kaggle columns → your app's feature names
 COLUMN_MAP = {
-    "age":                                    "age",
-    "MonthlyIncome":                          "annual_income",      # will multiply x12
-    "RevolvingUtilizationOfUnsecuredLines":   "debt_to_income_ratio",
-    "NumberOfOpenCreditLinesAndLoans":        "num_credit_lines",
-    "NumberOfTimes90DaysLate":                "num_delinquencies",
-    "DebtRatio":                              "loan_amount",        # proxy — see note
-    "NumberOfTime30-59DaysPastDueNotWorse":   "employment_years",   # proxy — see note
-    "SeriousDlqin2yrs":                       "default",
+    "RevolvingUtilizationOfUnsecuredLines": "revolving_utilization",
+    "age":                                   "age",
+    "NumberOfTime30-59DaysPastDueNotWorse":  "times_30_59_days_late",
+    "DebtRatio":                             "debt_to_income_ratio",
+    "MonthlyIncome":                         "monthly_income",
+    "NumberOfOpenCreditLinesAndLoans":       "num_credit_lines",
+    "NumberOfTimes90DaysLate":               "times_90_days_late",
+    "NumberRealEstateLoansOrLines":          "num_real_estate_loans",
+    "NumberOfTime60-89DaysPastDueNotWorse":  "times_60_89_days_late",
+    "NumberOfDependents":                    "num_dependents",
+    "SeriousDlqin2yrs":                      "default",
 }
 
 FEATURE_COLS = [
-    "age", "annual_income", "debt_to_income_ratio",
-    "num_credit_lines", "num_delinquencies",
-    "loan_amount", "employment_years",
+    "revolving_utilization",
+    "age",
+    "times_30_59_days_late",
+    "debt_to_income_ratio",
+    "monthly_income",
+    "num_credit_lines",
+    "times_90_days_late",
+    "num_real_estate_loans",
+    "times_60_89_days_late",
+    "num_dependents",
 ]
 
 
-def load_and_clean():
-    print("Loading real dataset...")
-    df = pd.read_csv(RAW_DATA_PATH, index_col=0)
-    print(f"Raw shape: {df.shape}")
+def load_and_clean(path: str) -> pd.DataFrame:
+    print(f"Loading dataset from: {path}")
+    df = pd.read_csv(path)
+
+    # Drop the unnamed row-index column Kaggle adds
+    df = df.drop(columns=[c for c in df.columns if c.lower().startswith("unnamed")], errors="ignore")
 
     # Rename columns
-    df = df.rename(columns={
-        "SeriousDlqin2yrs":                       "default",
-        "age":                                     "age",
-        "MonthlyIncome":                           "monthly_income",
-        "RevolvingUtilizationOfUnsecuredLines":    "debt_to_income_ratio",
-        "NumberOfOpenCreditLinesAndLoans":         "num_credit_lines",
-        "NumberOfTimes90DaysLate":                 "num_delinquencies",
-        "DebtRatio":                               "loan_amount",
-        "NumberOfTime30-59DaysPastDueNotWorse":    "employment_years",
-    })
+    df = df.rename(columns=COLUMN_MAP)
 
-    # Convert monthly income to annual
-    df["annual_income"] = df["monthly_income"] * 12
+    # Keep only the columns we need
+    needed = FEATURE_COLS + ["default"]
+    df = df[[c for c in needed if c in df.columns]]
 
-    # Cap extreme outliers
-    df["debt_to_income_ratio"] = df["debt_to_income_ratio"].clip(0, 1)
-    df["loan_amount"] = df["loan_amount"].clip(0, 5)
-    df["num_delinquencies"] = df["num_delinquencies"].clip(0, 20)
-    df["employment_years"] = df["employment_years"].clip(0, 20)
-    df["age"] = df["age"].clip(18, 100)
+    print(f"Raw shape: {df.shape}  |  Default rate: {df['default'].mean():.2%}")
 
-    # Impute missing values with median
+    # --- Data-quality fixes ---
+    # Revolving utilization > 1 is usually data error; cap at 1
+    df["revolving_utilization"] = df["revolving_utilization"].clip(0, 1)
+
+    # DebtRatio outliers (e.g. 3000+) — cap at 5 (500%)
+    df["debt_to_income_ratio"] = df["debt_to_income_ratio"].clip(0, 5)
+
+    # Remove clearly invalid ages
+    df = df[(df["age"] >= 18) & (df["age"] <= 100)]
+
+    # Impute missing values (MonthlyIncome ~20% missing, NumberOfDependents ~2.5%)
     imputer = SimpleImputer(strategy="median")
     df[FEATURE_COLS] = imputer.fit_transform(df[FEATURE_COLS])
 
-    # Drop rows where target is missing
-    df = df.dropna(subset=["default"])
-    df["default"] = df["default"].astype(int)
-
     print(f"Cleaned shape: {df.shape}")
-    print(f"Default rate: {df['default'].mean():.2%}")
     return df
 
 
 def train():
-    df = load_and_clean()
+    if not os.path.exists(RAW_DATA_PATH):
+        raise FileNotFoundError(
+            f"'{RAW_DATA_PATH}' not found in the working directory.\n"
+            "Download cs-training.csv from https://www.kaggle.com/c/GiveMeSomeCredit "
+            "and place it in the backend/ folder."
+        )
+
+    df = load_and_clean(RAW_DATA_PATH)
     df.to_csv(DATA_PATH, index=False)
-    print(f"Saved cleaned data → {DATA_PATH}")
+    print(f"Cleaned dataset saved → {DATA_PATH}")
 
     X = df[FEATURE_COLS]
     y = df["default"]
@@ -100,14 +124,14 @@ def train():
     X_train_sc = scaler.fit_transform(X_train)
     X_test_sc  = scaler.transform(X_test)
 
-    print("Training Gradient Boosting model on real data...")
+    print("Training Gradient Boosting model...")
     model = GradientBoostingClassifier(
         n_estimators=300,
         max_depth=4,
         learning_rate=0.05,
         subsample=0.8,
-        min_samples_leaf=50,
-        random_state=SEED
+        min_samples_leaf=20,
+        random_state=SEED,
     )
     model.fit(X_train_sc, y_train)
 
@@ -118,12 +142,19 @@ def train():
     print(classification_report(y_test, y_pred, target_names=["Approved", "Rejected"]))
 
     print("Computing SHAP explainer...")
-    explainer = shap.TreeExplainer(model)
+    # Use a background sample for speed (full dataset is 150k rows)
+    background = shap.sample(X_train_sc, 500, random_state=SEED)
+    explainer = shap.TreeExplainer(model, background)
 
-    joblib.dump(model,     MODEL_PATH)
-    joblib.dump(scaler,    SCALER_PATH)
+    joblib.dump(model,    MODEL_PATH)
+    joblib.dump(scaler,   SCALER_PATH)
     joblib.dump(explainer, EXPLAINER_PATH)
-    print("All artifacts saved. Training complete!")
+
+    print(f"\nAll artifacts saved.")
+    print(f"  Model     → {MODEL_PATH}")
+    print(f"  Scaler    → {SCALER_PATH}")
+    print(f"  Explainer → {EXPLAINER_PATH}")
+    print("\nTraining complete!")
 
 
 if __name__ == "__main__":
