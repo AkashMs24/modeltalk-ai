@@ -6,17 +6,27 @@ import toast from 'react-hot-toast'
 const SUGGESTED = [
   'Why was my loan rejected?',
   'What does debt-to-income ratio mean?',
-  'How can I improve my credit score?',
+  'How can I improve my revolving utilization?',
   'Is my risk score normal for my income?',
   'What factors matter most for approval?',
   'Explain SHAP values in simple terms'
 ]
 
+// Sample context using real Kaggle feature names
 const sampleContext = {
-  age: 32, annual_income: 65000, loan_amount: 20000,
-  credit_score: 680, employment_years: 5, debt_to_income_ratio: 0.32,
-  num_credit_lines: 4, num_delinquencies: 0,
-  gender: 'Male', ethnicity: 'White', zip_region: 'Urban'
+  revolving_utilization: 0.35,
+  age: 45,
+  late_30_59_days: 0,
+  debt_ratio: 0.28,
+  monthly_income: 5400,
+  open_credit_lines: 8,
+  late_90_days: 0,
+  real_estate_loans: 1,
+  late_60_89_days: 0,
+  num_dependents: 2,
+  gender: 'Male',
+  ethnicity: 'White',
+  zip_region: 'Urban'
 }
 
 export default function Copilot() {
@@ -26,7 +36,7 @@ export default function Copilot() {
       content: "Hello! I'm your Explainable AI Copilot. I can help you understand loan decisions, explain AI concepts, or walk you through what factors affect credit risk. What would you like to know?"
     }
   ])
-  const [input, setInput] = useState('')
+  const [input, setInput]   = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
 
@@ -70,15 +80,12 @@ export default function Copilot() {
     <div className="flex flex-col h-screen max-h-screen p-6 max-w-4xl mx-auto">
       <div className="mb-4">
         <h1 className="font-display text-3xl font-700 text-white mb-1">AI Copilot Chat</h1>
-        <p className="text-muted text-sm">Ask anything about loan decisions in plain English. Powered by LLaMA 3 70B.</p>
+        <p className="text-muted text-sm">Ask anything about loan decisions in plain English. Powered by LLaMA 3.3 70B.</p>
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
         {SUGGESTED.map(s => (
-          <button
-            key={s}
-            onClick={() => sendMessage(s)}
-            disabled={loading}
+          <button key={s} onClick={() => sendMessage(s)} disabled={loading}
             className="text-xs px-3 py-1.5 bg-panel border border-border rounded-full text-muted hover:text-white hover:border-accent/40 transition-all disabled:opacity-50"
           >
             {s}
@@ -114,7 +121,8 @@ export default function Copilot() {
             <div className="bg-panel border border-border rounded-2xl px-4 py-3">
               <div className="flex gap-1">
                 {[0,1,2].map(i => (
-                  <div key={i} className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                  <div key={i} className="w-2 h-2 bg-accent rounded-full animate-bounce"
+                    style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
               </div>
             </div>
