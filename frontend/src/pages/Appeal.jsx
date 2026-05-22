@@ -1,36 +1,45 @@
 import { useState } from 'react'
 import { submitAppeal } from '../services/api'
-import { FileText, Loader, ArrowRight, ChevronRight } from 'lucide-react'
+import { FileText, Loader, ChevronRight, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const defaultApp = {
-  age: 35, annual_income: 45000, loan_amount: 25000,
-  credit_score: 610, employment_years: 2, debt_to_income_ratio: 0.48,
-  num_credit_lines: 3, num_delinquencies: 1,
+  revolving_utilization: 0.72,
+  age: 42,
+  late_30_59_days: 2,
+  debt_ratio: 0.52,
+  monthly_income: 3800,
+  open_credit_lines: 5,
+  late_90_days: 1,
+  real_estate_loans: 1,
+  late_60_89_days: 0,
+  num_dependents: 3,
   gender: 'Female', ethnicity: 'Black', zip_region: 'Rural'
 }
+
+const FIELDS = [
+  { key: 'revolving_utilization', label: 'Revolving Utilization', step: 0.01 },
+  { key: 'monthly_income',        label: 'Monthly Income ($)',    step: 100  },
+  { key: 'debt_ratio',            label: 'Debt Ratio',            step: 0.01 },
+  { key: 'late_30_59_days',       label: '30–59 Days Late',       step: 1    },
+  { key: 'late_90_days',          label: '90+ Days Late',         step: 1    },
+  { key: 'open_credit_lines',     label: 'Open Credit Lines',     step: 1    },
+]
 
 export default function Appeal() {
   const [application, setApplication] = useState(defaultApp)
   const [appealReason, setAppealReason] = useState('')
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [result, setResult]             = useState(null)
+  const [loading, setLoading]           = useState(false)
 
   const handleChange = (key, val) =>
-    setApplication(a => ({ ...a, [key]: parseFloat(val) || val }))
+    setApplication(a => ({ ...a, [key]: parseFloat(val) ?? val }))
 
   const handleSubmit = async () => {
-    if (!appealReason.trim()) {
-      toast.error('Please provide an appeal reason.')
-      return
-    }
-    setLoading(true)
-    setResult(null)
+    if (!appealReason.trim()) { toast.error('Please provide an appeal reason.'); return }
+    setLoading(true); setResult(null)
     try {
-      const res = await submitAppeal({
-        original_application: application,
-        appeal_reason: appealReason
-      })
+      const res = await submitAppeal({ original_application: application, appeal_reason: appealReason })
       setResult(res)
       toast.success('Appeal processed!')
     } catch (e) {
@@ -52,20 +61,10 @@ export default function Appeal() {
           <div className="bg-panel border border-border rounded-2xl p-6">
             <h2 className="font-display font-600 text-white mb-4">Original Application</h2>
             <div className="grid grid-cols-2 gap-3">
-              {[
-                { key: 'credit_score', label: 'Credit Score' },
-                { key: 'annual_income', label: 'Annual Income ($)' },
-                { key: 'loan_amount', label: 'Loan Amount ($)' },
-                { key: 'debt_to_income_ratio', label: 'DTI Ratio' },
-                { key: 'employment_years', label: 'Employment Yrs' },
-                { key: 'num_delinquencies', label: 'Delinquencies' },
-              ].map(({ key, label }) => (
+              {FIELDS.map(({ key, label, step }) => (
                 <div key={key}>
                   <label className="text-xs font-mono text-muted block mb-1">{label}</label>
-                  <input
-                    type="number"
-                    value={application[key]}
-                    step={key === 'debt_to_income_ratio' ? 0.01 : 1}
+                  <input type="number" value={application[key]} step={step}
                     onChange={e => handleChange(key, e.target.value)}
                     className="w-full bg-ink border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-accent transition-colors"
                   />
@@ -76,16 +75,11 @@ export default function Appeal() {
 
           <div className="bg-panel border border-border rounded-2xl p-6">
             <h2 className="font-display font-600 text-white mb-3">Your Appeal Reason</h2>
-            <textarea
-              value={appealReason}
-              onChange={e => setAppealReason(e.target.value)}
-              rows={4}
-              placeholder="Explain why you believe this decision should be reconsidered..."
+            <textarea value={appealReason} onChange={e => setAppealReason(e.target.value)} rows={4}
+              placeholder="Explain why this decision should be reconsidered. E.g., 'I recently paid off two loans and cleared all past-due accounts...'"
               className="w-full bg-ink border border-border rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-accent transition-colors resize-none placeholder:text-muted"
             />
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
+            <button onClick={handleSubmit} disabled={loading}
               className="w-full mt-4 bg-amber/90 hover:bg-amber disabled:opacity-50 text-ink font-display font-600 py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
             >
               {loading ? <Loader size={16} className="animate-spin" /> : <FileText size={16} />}
@@ -136,7 +130,7 @@ export default function Appeal() {
               {result.what_would_flip_decision.length > 0 && (
                 <div className="bg-panel border border-border rounded-2xl p-6 animate-slide-up">
                   <h3 className="font-display font-600 text-white mb-3">What Would Flip the Decision</h3>
-                  <p className="text-xs text-muted mb-3">Counterfactual analysis — minimal changes needed for approval:</p>
+                  <p className="text-xs text-muted mb-3">Minimal changes needed for approval:</p>
                   <div className="space-y-2">
                     {result.what_would_flip_decision.map((item, i) => (
                       <div key={i} className="flex items-start gap-2 text-sm text-white/80 bg-accent/5 border border-accent/15 rounded-xl p-3">
