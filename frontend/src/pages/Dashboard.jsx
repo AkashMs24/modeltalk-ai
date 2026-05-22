@@ -45,9 +45,9 @@ const features = [
 ]
 
 const stats = [
-  { label: 'Model Accuracy',        value: '93.9%',   icon: TrendingUp,    color: 'emerald' },
-  { label: 'Applications Analyzed', value: '150,000', icon: Users,         color: 'accent'  },
-  { label: 'Bias Flags',            value: '3 Groups', icon: AlertTriangle, color: 'amber'   },
+  { label: 'Model Accuracy',     value: '94%',    icon: TrendingUp,    color: 'emerald' },
+  { label: 'Training Dataset',   value: '150,000', icon: Users,         color: 'accent'  },
+  { label: 'AUC-ROC Score',      value: '0.87',   icon: AlertTriangle, color: 'amber'   },
 ]
 
 const colorMap = {
