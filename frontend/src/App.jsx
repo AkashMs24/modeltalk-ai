@@ -5,7 +5,7 @@ import Predict from './pages/Predict'
 import BiasReport from './pages/BiasReport'
 import Appeal from './pages/Appeal'
 import Copilot from './pages/Copilot'
-import WhatIf from './pages/WhatIf'
+import Whatif from './pages/Whatif'
 
 export default function App() {
   return (
