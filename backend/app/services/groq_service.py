@@ -3,7 +3,7 @@ from groq import AsyncGroq
 from typing import List, Dict, Any
 
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL = "llama3-70b-8192"
+model="llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = """You are an Explainable AI Copilot for a loan credit risk assessment system.
 Your role is to help business users — especially non-technical ones — understand AI decisions in plain English.
